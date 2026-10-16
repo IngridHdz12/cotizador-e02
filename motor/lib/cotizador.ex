@@ -48,6 +48,41 @@ defmodule Cotizador do
   # Si pasa todas las validaciones
   defp validar(_embarque, _reglas), do: :ok
 
-  # Función temporal para permitir la compilación
-  defp calcular(_embarque, _reglas), do: %{}
-end
+
+# --- Etapa 2: El flete ---
+
+  defp calcular(embarque, reglas) do
+    flete_bruto = embarque.distancia_km * reglas.tarifa_km 
+
+    descuento = obtener_descuento(embarque.peso_kg, flete_bruto, reglas.descuento)
+    flete = flete_bruto - descuento
+    cuota_puente = Map.fetch!(reglas.cuota_puente, embarque.puente)
+
+    %{
+      flete_bruto: flete_bruto,
+      descuento: descuento,
+      flete: flete,
+      cuota_puente: cuota_puente,
+      recargo: 0,        # Se mantienen en 0 para esta etapa
+      ajuste_minimo: 0,  # Se mantienen en 0 para esta etapa
+      total: flete + cuota_puente
+    }
+  end
+
+  # función de redondeo 
+  defp pct(monto, p), do: div(monto * p + 50, 100)
+
+  # cláusulas de descuento en orden
+  defp obtener_descuento(peso, flete_bruto, %{criterio: :a_partir_de, umbral_kg: u, pct: p}) when peso >= u do
+    pct(flete_bruto, p)
+  end
+
+  defp obtener_descuento(peso, flete_bruto, %{criterio: :mas_de, umbral_kg: u, pct: p}) when peso > u do
+    pct(flete_bruto, p)
+  end
+
+  defp obtener_descuento(_peso, _flete_bruto, _reglas_desc) do
+    0
+  end
+  
+end 
