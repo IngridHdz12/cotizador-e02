@@ -57,16 +57,18 @@ defmodule Cotizador do
     flete = flete_bruto - descuento
     cuota_puente = Map.fetch!(reglas.cuota_puente, embarque.puente)
 
+    # Conectamos con Etapa 3 usando los cálculos del flete base
+    flete_base = %{flete: flete, cuota_puente: cuota_puente}
+    etapa3 = calcular_recargos_etapa3(embarque, reglas, flete_base)
+    
     %{
       flete_bruto: flete_bruto,
       descuento: descuento,
       flete: flete,
       cuota_puente: cuota_puente,
-      # Se mantienen en 0 para esta etapa
-      recargo: 0,
-      # Se mantienen en 0 para esta etapa
-      ajuste_minimo: 0,
-      total: flete + cuota_puente
+      recargo: etapa3.recargo,
+      ajuste_minimo: etapa3.ajuste_minimo,
+      total: etapa3.total
     }
   end
 
@@ -87,4 +89,34 @@ defmodule Cotizador do
   defp obtener_descuento(_peso, _flete_bruto, _reglas_desc) do
     0
   end
+
+# --- Etapa 3: Recargos y mínimo ---
+
+  defp calcular_recargos_etapa3(embarque, reglas, flete_base) do
+    # 1. Obtener datos de recargo por tipo
+    %{pct: pct_recargo, fija: fija_recargo} = Map.fetch!(reglas.recargo, embarque.tipo)
+
+    # 2. Obtener la base sobre la que se calcula el recargo (flete o flete + puente)
+    base_recargo = obtener_base_recargo(reglas.base_recargo, flete_base.flete, flete_base.cuota_puente)
+    recargo = pct(base_recargo, pct_recargo) + fija_recargo
+
+    # 3. Mínimo y ajuste final
+    subtotal = flete_base.flete + flete_base.cuota_puente + recargo
+    total = max(subtotal, reglas.minimo)
+    ajuste_minimo = total - subtotal
+
+    %{
+      recargo: recargo,
+      ajuste_minimo: ajuste_minimo,
+      total: total
+    }
+  end
+
+  # Cláusulas para la base del recargo
+  defp obtener_base_recargo(:flete, flete, _cuota_puente), do: flete
+  defp obtener_base_recargo(:subtotal, flete, cuota_puente), do: flete + cuota_puente
+  defp obtener_base_recargo(:flete_mas_puente, flete, cuota_puente), do: flete + cuota_puente
+  defp obtener_base_recargo(:flete_mas_cuota, flete, cuota_puente), do: flete + cuota_puente
+
+
 end
