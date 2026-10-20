@@ -60,7 +60,7 @@ defmodule Cotizador do
     # Conectamos con Etapa 3 usando los cálculos del flete base
     flete_base = %{flete: flete, cuota_puente: cuota_puente}
     etapa3 = calcular_recargos_etapa3(embarque, reglas, flete_base)
-    
+
     %{
       flete_bruto: flete_bruto,
       descuento: descuento,
@@ -90,14 +90,16 @@ defmodule Cotizador do
     0
   end
 
-# --- Etapa 3: Recargos y mínimo ---
+  # --- Etapa 3: Recargos y mínimo ---
 
   defp calcular_recargos_etapa3(embarque, reglas, flete_base) do
     # 1. Obtener datos de recargo por tipo
     %{pct: pct_recargo, fija: fija_recargo} = Map.fetch!(reglas.recargo, embarque.tipo)
 
     # 2. Obtener la base sobre la que se calcula el recargo (flete o flete + puente)
-    base_recargo = obtener_base_recargo(reglas.base_recargo, flete_base.flete, flete_base.cuota_puente)
+    base_recargo =
+      obtener_base_recargo(reglas.base_recargo, flete_base.flete, flete_base.cuota_puente)
+
     recargo = pct(base_recargo, pct_recargo) + fija_recargo
 
     # 3. Mínimo y ajuste final
@@ -118,5 +120,47 @@ defmodule Cotizador do
   defp obtener_base_recargo(:flete_mas_puente, flete, cuota_puente), do: flete + cuota_puente
   defp obtener_base_recargo(:flete_mas_cuota, flete, cuota_puente), do: flete + cuota_puente
 
+  # --- Etapa 4: Resumen ---
+  
+  def resumen(lote, reglas) do
+    lote
+    |> Enum.map(fn embarque -> {embarque, cotizar(embarque, reglas)} end)
+    |> Enum.reduce(
+      %{
+        cotizados: 0,
+        rechazados: [],
+        total: 0,
+        por_puente: %{comercio_mundial: 0, colombia: 0}
+      },
+      &acumular_resumen/2
+    )
+    |> voltear_rechazados()
+  end
 
+  # Cláusula 1: Cuando el embarque fue cotizado con éxito
+  defp acumular_resumen({embarque, {:ok, cotizacion}}, acc) do
+    %{
+      acc
+      | cotizados: acc.cotizados + 1,
+        total: acc.total + cotizacion.total,
+        por_puente:
+          Map.update(acc.por_puente, embarque.puente, cotizacion.total, &(&1 + cotizacion.total))
+    }
+  end
+
+  # Cláusula 2: Cuando el embarque fue rechazado
+  defp acumular_resumen({embarque, {:error, motivo}}, acc) do
+    # Agregamos al frente de la lista (es más rápido, pero quedan al revés)
+    %{acc | rechazados: [{embarque.id, motivo} | acc.rechazados]}
+  end
+
+  defp voltear_rechazados(resultado) do
+    %{resultado | rechazados: invertir_lista(resultado.rechazados, [])}
+  end
+
+  defp invertir_lista([], acumulador), do: acumulador
+
+  defp invertir_lista([cabeza | cola], acumulador) do
+    invertir_lista(cola, [cabeza | acumulador])
+  end
 end
