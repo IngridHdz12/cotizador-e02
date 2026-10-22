@@ -121,7 +121,7 @@ defmodule Cotizador do
   defp obtener_base_recargo(:flete_mas_cuota, flete, cuota_puente), do: flete + cuota_puente
 
   # --- Etapa 4: Resumen ---
-  
+
   def resumen(lote, reglas) do
     lote
     |> Enum.map(fn embarque -> {embarque, cotizar(embarque, reglas)} end)
