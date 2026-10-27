@@ -1,13 +1,12 @@
+// Etapa 1
 export type Puente = 'comercio_mundial' | 'colombia';
 
-// 2. La carga
 export type Carga =
   | { tipo: 'general' }
   | { tipo: 'refrigerada' }
   | { tipo: 'peligrosa'; numeroUn: string }
   | { tipo: 'sobredimensionada'; permiso: string };
 
-// 3. El embarque
 export type DatosComunes = {
   id: string;
   pesoKg: number;
@@ -16,7 +15,6 @@ export type DatosComunes = {
 };
 export type Embarque = DatosComunes & Carga;
 
-// 4. Cotizacion
 export type Cotizacion = {
   id: string;
   fleteBruto: number;
@@ -28,16 +26,13 @@ export type Cotizacion = {
   total: number;
 };
 
-// 5. Motivo
 export type Motivo = 'peso_invalido' | 'distancia_invalida' | 'excede_peso_maximo';
 
-// 1. Los cuatro estados
 export type Borrador = { estado: 'borrador'; embarque: Embarque };
 export type Cotizado = { estado: 'cotizado'; embarque: Embarque; cotizacion: Cotizacion };
 export type Rechazado = { estado: 'rechazado'; embarque: Embarque; motivo: Motivo };
 export type Despachado = { estado: 'despachado'; embarque: Embarque; cotizacion: Cotizacion; folio: string };
 
-// 6. Reglas
 export type Reglas = {
   cuotaPuente: Record<Puente, number>;
   pesoMaximoKg: number;
@@ -52,16 +47,72 @@ export type Reglas = {
   minimo: number;
 };
 
-// 7. Resultado
 export type Resultado<T, E> = 
   | { ok: true; valor: T } 
   | { ok: false; error: E };
 
-  
-export function cotizar(_b: Borrador, _r: Reglas): Cotizado | Rechazado {
-  throw new Error('por implementar');
-}
 
 export function despachar(_c: Cotizado, _folio: string): Despachado {
   throw new Error('por implementar');
+}
+
+// Etapa 2 
+const pct = (monto: number, p: number): number => Math.floor((monto * p + 50) / 100);
+
+const POLITICAS_CARGA: Record<Carga['tipo'], { revisaPeso: boolean }> = {
+  general: { revisaPeso: true },
+  refrigerada: { revisaPeso: true },
+  peligrosa: { revisaPeso: true },
+  sobredimensionada: { revisaPeso: false }
+};
+
+function validar(e: Embarque, r: Reglas): Resultado<Embarque, Motivo> {
+  if (e.pesoKg <= 0) return { ok: false, error: 'peso_invalido' };
+  if (e.distanciaKm <= 0) return { ok: false, error: 'distancia_invalida' };
+  
+  if (POLITICAS_CARGA[e.tipo].revisaPeso && e.pesoKg > r.pesoMaximoKg) {
+    return { ok: false, error: 'excede_peso_maximo' };
+  }
+  
+  return { ok: true, valor: e };
+}
+
+export function cotizar(b: Borrador, r: Reglas): Cotizado | Rechazado {
+  const validacion = validar(b.embarque, r);
+  if (!validacion.ok) {
+    return { estado: 'rechazado', embarque: b.embarque, motivo: validacion.error };
+  }
+
+  const e = validacion.valor;
+  
+  const fleteBruto = e.distanciaKm * r.tarifaKm;
+  
+  const aplicaDescuento = r.descuento.criterio === 'a_partir_de' 
+    ? e.pesoKg >= r.descuento.umbralKg 
+    : e.pesoKg > r.descuento.umbralKg;
+    
+  const descuento = aplicaDescuento ? pct(fleteBruto, r.descuento.pct) : 0;
+  const flete = fleteBruto - descuento;
+  const cuotaPuente = r.cuotaPuente[e.puente];
+  
+  const baseRecargo = r.baseRecargo === 'flete' ? flete : (flete + cuotaPuente);
+  const politicaRecargo = r.recargo[e.tipo];
+  const recargo = pct(baseRecargo, politicaRecargo.pct) + politicaRecargo.fija;
+  
+  const totalParcial = flete + cuotaPuente + recargo;
+  const ajusteMinimo = totalParcial < r.minimo ? (r.minimo - totalParcial) : 0;
+  const total = totalParcial + ajusteMinimo;
+
+  const cotizacion: Cotizacion = {
+    id: e.id,
+    fleteBruto,
+    descuento,
+    flete,
+    cuotaPuente,
+    recargo,
+    ajusteMinimo,
+    total
+  };
+
+  return { estado: 'cotizado', embarque: e, cotizacion };
 }
