@@ -1,3 +1,4 @@
+// Etapa 1
 export type Puente = 'comercio_mundial' | 'colombia';
 
 export type Carga =
@@ -51,10 +52,67 @@ export type Resultado<T, E> =
   | { ok: false; error: E };
 
 
-export function cotizar(_b: Borrador, _r: Reglas): Cotizado | Rechazado {
+export function despachar(_c: Cotizado, _folio: string): Despachado {
   throw new Error('por implementar');
 }
 
-export function despachar(_c: Cotizado, _folio: string): Despachado {
-  throw new Error('por implementar');
+// Etapa 2 
+const pct = (monto: number, p: number): number => Math.floor((monto * p + 50) / 100);
+
+const POLITICAS_CARGA: Record<Carga['tipo'], { revisaPeso: boolean }> = {
+  general: { revisaPeso: true },
+  refrigerada: { revisaPeso: true },
+  peligrosa: { revisaPeso: true },
+  sobredimensionada: { revisaPeso: false }
+};
+
+function validar(e: Embarque, r: Reglas): Resultado<Embarque, Motivo> {
+  if (e.pesoKg <= 0) return { ok: false, error: 'peso_invalido' };
+  if (e.distanciaKm <= 0) return { ok: false, error: 'distancia_invalida' };
+  
+  if (POLITICAS_CARGA[e.tipo].revisaPeso && e.pesoKg > r.pesoMaximoKg) {
+    return { ok: false, error: 'excede_peso_maximo' };
+  }
+  
+  return { ok: true, valor: e };
+}
+
+export function cotizar(b: Borrador, r: Reglas): Cotizado | Rechazado {
+  const validacion = validar(b.embarque, r);
+  if (!validacion.ok) {
+    return { estado: 'rechazado', embarque: b.embarque, motivo: validacion.error };
+  }
+
+  const e = validacion.valor;
+  
+  const fleteBruto = e.distanciaKm * r.tarifaKm;
+  
+  const aplicaDescuento = r.descuento.criterio === 'a_partir_de' 
+    ? e.pesoKg >= r.descuento.umbralKg 
+    : e.pesoKg > r.descuento.umbralKg;
+    
+  const descuento = aplicaDescuento ? pct(fleteBruto, r.descuento.pct) : 0;
+  const flete = fleteBruto - descuento;
+  const cuotaPuente = r.cuotaPuente[e.puente];
+  
+  const baseRecargo = r.baseRecargo === 'flete' ? flete : (flete + cuotaPuente);
+  const politicaRecargo = r.recargo[e.tipo];
+  const recargo = pct(baseRecargo, politicaRecargo.pct) + politicaRecargo.fija;
+  
+  const totalParcial = flete + cuotaPuente + recargo;
+  const ajusteMinimo = totalParcial < r.minimo ? (r.minimo - totalParcial) : 0;
+  const total = totalParcial + ajusteMinimo;
+
+  const cotizacion: Cotizacion = {
+    id: e.id,
+    fleteBruto,
+    descuento,
+    flete,
+    cuotaPuente,
+    recargo,
+    ajusteMinimo,
+    total
+  };
+
+  return { estado: 'cotizado', embarque: e, cotizacion };
 }
