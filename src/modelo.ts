@@ -51,11 +51,6 @@ export type Resultado<T, E> =
   | { ok: true; valor: T } 
   | { ok: false; error: E };
 
-
-export function despachar(_c: Cotizado, _folio: string): Despachado {
-  throw new Error('por implementar');
-}
-
 // Etapa 2 
 const pct = (monto: number, p: number): number => Math.floor((monto * p + 50) / 100);
 
@@ -115,4 +110,14 @@ export function cotizar(b: Borrador, r: Reglas): Cotizado | Rechazado {
   };
 
   return { estado: 'cotizado', embarque: e, cotizacion };
+}
+
+// Etapa 3
+export function despachar(c: Cotizado, folio: string): Despachado {
+  return {
+    estado: 'despachado',
+    embarque: c.embarque,
+    cotizacion: c.cotizacion,
+    folio: folio
+  };
 }
